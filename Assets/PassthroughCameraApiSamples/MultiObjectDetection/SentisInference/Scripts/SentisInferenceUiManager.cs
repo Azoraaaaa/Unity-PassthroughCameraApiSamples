@@ -1,5 +1,6 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
+using System;
 using System.Collections.Generic;
 using Meta.XR;
 using Meta.XR.Samples;
@@ -51,8 +52,14 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
         public void SetLabels(TextAsset labelsAsset)
         {
-            // Parse neural net labels
-            m_labels = labelsAsset.text.Split('\n');
+            if (labelsAsset == null)
+            {
+                Debug.LogError($"{nameof(SentisInferenceUiManager)} has no labels asset assigned.");
+                m_labels = Array.Empty<string>();
+                return;
+            }
+
+            m_labels = labelsAsset.text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
         public void DrawUIBoxes(List<(int classId, Vector4 boundingBox)> detections, Vector2 inputSize, Pose cameraPose)
@@ -82,7 +89,11 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 Vector2 center = currentResolution * (normalizedCenter - Vector2.one * 0.5f);
 
                 // Get the object class name
-                var classname = m_labels[detection.classId].Replace(" ", "_");
+                if (!TryGetClassName(detection.classId, out var classname))
+                {
+                    Debug.LogWarning($"Skipping detection with class id {detection.classId}; labels count is {m_labels?.Length ?? 0}.");
+                    continue;
+                }
 
                 // Get the 3D marker world position using Depth Raycast
                 var ray = m_cameraAccess.ViewportPointToRay(new Vector2(normalizedCenter.x, 1.0f - normalizedCenter.y), cameraPose);
@@ -120,7 +131,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                     Mathf.Abs(bottomRightLocal.x - topLeftLocal.x),
                     Mathf.Abs(bottomRightLocal.y - topLeftLocal.y));
 
-                var boxData = GetOrCreateBoundingBoxData(detection.classId, worldSpaceCenter, size);
+                var boxData = GetOrCreateBoundingBoxData(detection.classId, classname, worldSpaceCenter, size);
                 var boxRectTransform = boxData.BoxRectTransform;
                 boxRectTransform.GetComponentInChildren<Text>().text = $"Id: {detection.classId} Class: {classname} Center (px): {center:0.0} Center (%): {normalizedCenter:0.0}";
                 boxRectTransform.SetPositionAndRotation(worldSpaceCenter, Quaternion.LookRotation(normal));
@@ -129,7 +140,19 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             }
         }
 
-        private BoundingBoxData GetOrCreateBoundingBoxData(int classId, Vector3 worldSpaceCenter, Vector2 worldSpaceSize)
+        private bool TryGetClassName(int classId, out string className)
+        {
+            className = null;
+            if (m_labels == null || classId < 0 || classId >= m_labels.Length)
+            {
+                return false;
+            }
+
+            className = m_labels[classId].Replace(" ", "_");
+            return true;
+        }
+
+        private BoundingBoxData GetOrCreateBoundingBoxData(int classId, string className, Vector3 worldSpaceCenter, Vector2 worldSpaceSize)
         {
             BoundingBoxData reusedBox = null;
             for (int i = m_boxDrawn.Count - 1; i >= 0; i--)
@@ -184,7 +207,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             // Create a new box
             var newData = GetBoxFromPoolOrCreate();
             newData.ClassId = classId;
-            newData.ClassName = m_labels[classId].Replace(" ", "_");
+            newData.ClassName = className;
             m_boxDrawn.Add(newData);
             return newData;
         }

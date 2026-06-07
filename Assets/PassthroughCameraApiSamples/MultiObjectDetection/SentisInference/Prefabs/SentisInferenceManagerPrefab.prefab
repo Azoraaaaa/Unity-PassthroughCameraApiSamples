@@ -126,12 +126,12 @@ MonoBehaviour:
   m_uiMenuManager: {fileID: 0}
   m_detectionManager: {fileID: 0}
   m_backend: 512
-  m_sentisModel: {fileID: 5022602860645237092, guid: 69ab50aef18ae412cac4b305492d527c, type: 3}
+  m_sentisModel: {fileID: 5022602860645237092, guid: 135520e24bd45e44c8094dc4a8b956fb, type: 3}
   m_labelsAsset: {fileID: 4900000, guid: c01c64149c7930b45a76559caabd5c78, type: 3}
   m_iouThreshold: 0.4
   m_scoreThreshold: 0.3
   m_uiInference: {fileID: 2184060436030677583}
-  OnnxModel: {fileID: 5022602860645237092, guid: e61826a46beb24bb380fd628c56eacaa, type: 3}
+  OnnxModel: {fileID: 5022602860645237092, guid: 135520e24bd45e44c8094dc4a8b956fb, type: 3}
 --- !u!114 &2184060436030677583
 MonoBehaviour:
   m_ObjectHideFlags: 0

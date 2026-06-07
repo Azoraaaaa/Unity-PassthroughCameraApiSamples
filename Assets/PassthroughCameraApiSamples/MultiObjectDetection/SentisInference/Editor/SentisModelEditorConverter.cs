@@ -1,4 +1,5 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
+using System.IO;
 using Meta.XR.Samples;
 using Unity.InferenceEngine;
 using UnityEditor;
@@ -10,23 +11,18 @@ namespace PassthroughCameraSamples.MultiObjectDetection.Editor
     [CustomEditor(typeof(SentisInferenceRunManager))]
     public class SentisModelEditorConverter : UnityEditor.Editor
     {
-        private const string FILEPATH = "Assets/PassthroughCameraApiSamples/MultiObjectDetection/SentisInference/Model/yolov9sentis.sentis";
         private SentisInferenceRunManager m_targetClass;
-        private float m_iouThreshold;
-        private float m_scoreThreshold;
 
         public void OnEnable()
         {
             m_targetClass = (SentisInferenceRunManager)target;
-            m_iouThreshold = serializedObject.FindProperty("m_iouThreshold").floatValue;
-            m_scoreThreshold = serializedObject.FindProperty("m_scoreThreshold").floatValue;
         }
 
         public override void OnInspectorGUI()
         {
             _ = DrawDefaultInspector();
 
-            if (GUILayout.Button("Generate Yolov9 Sentis model with Non-Max-Supression layer"))
+            if (GUILayout.Button("Generate Sentis model from assigned ONNX"))
             {
                 OnEnable(); // Get the latest values from the serialized object
                 ConvertModel(); // convert the ONNX model to sentis
@@ -35,8 +31,21 @@ namespace PassthroughCameraSamples.MultiObjectDetection.Editor
 
         private void ConvertModel()
         {
-            //Load model
+            if (m_targetClass.OnnxModel == null)
+            {
+                Debug.LogError("No ONNX model assigned.");
+                return;
+            }
+
             var model = ModelLoader.Load(m_targetClass.OnnxModel);
+            var modelName = m_targetClass.OnnxModel.name.ToLowerInvariant();
+            var outputPath = Path.ChangeExtension(AssetDatabase.GetAssetPath(m_targetClass.OnnxModel), ".sentis");
+            var isEndToEndModel = modelName.Contains("ete") || modelName.Contains("end2end");
+            if (isEndToEndModel)
+            {
+                SaveQuantizedModel(model, outputPath);
+                return;
+            }
 
             //Here we transform the output of the model by feeding it through a Non-Max-Suppression layer.
             var graph = new FunctionalGraph();
@@ -59,12 +68,16 @@ namespace PassthroughCameraSamples.MultiObjectDetection.Editor
             var corners = Functional.MatMul(boxCoords, centersToCorners);                    //shape=(N,4)
             var modelFinal = graph.Compile(corners, classIDs, scores);
 
-            //Export the model to Sentis format
-            ModelQuantizer.QuantizeWeights(QuantizationType.Uint8, ref modelFinal);
-            ModelWriter.Save(FILEPATH, modelFinal);
+            SaveQuantizedModel(modelFinal, outputPath);
+        }
 
+        private static void SaveQuantizedModel(Model model, string outputPath)
+        {
+            ModelQuantizer.QuantizeWeights(QuantizationType.Uint8, ref model);
+            ModelWriter.Save(outputPath, model);
             // refresh assets
             AssetDatabase.Refresh();
+            Debug.Log($"Saved Sentis model to '{outputPath}'.");
         }
     }
 }

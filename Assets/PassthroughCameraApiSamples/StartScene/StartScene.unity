@@ -1310,7 +1310,7 @@ MonoBehaviour:
   Overlay: {fileID: 343815009}
   Text: {fileID: 207201471}
   VrRig: {fileID: 946435675}
-  m_objectDetectionModel: {fileID: 5022602860645237092, guid: 69ab50aef18ae412cac4b305492d527c, type: 3}
+  m_objectDetectionModel: {fileID: 5022602860645237092, guid: 135520e24bd45e44c8094dc4a8b956fb, type: 3}
 --- !u!1001 &1185634211
 PrefabInstance:
   m_ObjectHideFlags: 0
