@@ -1971,11 +1971,11 @@ PrefabInstance:
     - target: {fileID: 2681575481727882275, guid: 927c1b782bb796b4b9b433d533cbccca, type: 3}
       propertyPath: OnnxModel
       value: 
-      objectReference: {fileID: 5022602860645237092, guid: 96b4ae41fa59f1c42bf5f6f619075e67, type: 3}
+      objectReference: {fileID: 5022602860645237092, guid: 03819141312a3ab4eae1b2b531a1321a, type: 3}
     - target: {fileID: 2681575481727882275, guid: 927c1b782bb796b4b9b433d533cbccca, type: 3}
       propertyPath: m_sentisModel
       value: 
-      objectReference: {fileID: 5022602860645237092, guid: 38acb6112afb1df41afcff5ef212f6c9, type: 3}
+      objectReference: {fileID: 5022602860645237092, guid: dcc1f680996f37d498bb920e636e6e18, type: 3}
     - target: {fileID: 2681575481727882275, guid: 927c1b782bb796b4b9b433d533cbccca, type: 3}
       propertyPath: m_cameraAccess
       value: 

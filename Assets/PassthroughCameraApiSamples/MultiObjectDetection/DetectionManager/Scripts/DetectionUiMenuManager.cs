@@ -101,7 +101,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         #region Ui state: detection information
         private void UpdateLabelInformation()
         {
-            m_labelInformation.text = $"Unity Inference Engine version: 2.2.1\nAI model: YOLO26n\nDetecting objects: {m_objectsDetected}\nObjects identified: {m_objectsIdentified}";
+            m_labelInformation.text = $"Unity Inference Engine version: 2.2.1\nAI model: YOLO26n LVIS\nDetecting objects: {m_objectsDetected}\nObjects identified: {m_objectsIdentified}";
         }
 
         public void OnObjectsDetected(int objects)
