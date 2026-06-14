@@ -99,13 +99,33 @@ namespace PassthroughCameraSamples.CameraToWorld
         private void ScaleCameraCanvas()
         {
             var cameraCanvasRectTransform = m_cameraCanvas.GetComponentInChildren<RectTransform>();
-            var leftSidePointInCamera = m_cameraAccess.ViewportPointToRay(new Vector2(0f, 0.5f));
-            var rightSidePointInCamera = m_cameraAccess.ViewportPointToRay(new Vector2(1f, 0.5f));
-            var horizontalFoVDegrees = Vector3.Angle(leftSidePointInCamera.direction, rightSidePointInCamera.direction);
-            var horizontalFoVRadians = horizontalFoVDegrees / 180 * Math.PI;
-            var newCanvasWidthInMeters = 2 * m_canvasDistance * Math.Tan(horizontalFoVRadians / 2);
-            var localScale = (float)(newCanvasWidthInMeters / cameraCanvasRectTransform.sizeDelta.x);
-            cameraCanvasRectTransform.localScale = new Vector3(localScale, localScale, localScale);
+
+            // Derive the image rectangle from the actual ray-plane intersections on a plane perpendicular
+            // to the optical axis. The optical axis is the camera-local +Z in world space - this is NOT the
+            // same as ViewportPointToRay(0.5, 0.5).direction when the principal point is offset.
+            var cameraPose = m_cameraAccess.GetCameraPose();
+            var opticalAxis = cameraPose.forward;
+            var plane = new Plane(-opticalAxis, cameraPose.position + opticalAxis * m_canvasDistance);
+
+            var leftRay = m_cameraAccess.ViewportPointToRay(new Vector2(0f, 0.5f));
+            var rightRay = m_cameraAccess.ViewportPointToRay(new Vector2(1f, 0.5f));
+            var bottomRay = m_cameraAccess.ViewportPointToRay(new Vector2(0.5f, 0f));
+            var topRay = m_cameraAccess.ViewportPointToRay(new Vector2(0.5f, 1f));
+
+            plane.Raycast(leftRay, out var lDist);
+            plane.Raycast(rightRay, out var rDist);
+            plane.Raycast(bottomRay, out var bDist);
+            plane.Raycast(topRay, out var tDist);
+
+            var width = (rightRay.GetPoint(rDist) - leftRay.GetPoint(lDist)).magnitude;
+            var height = (topRay.GetPoint(tDist) - bottomRay.GetPoint(bDist)).magnitude;
+
+            // Scale width and height independently from the true ray-plane intersections instead of
+            // applying a single FOV-derived scale. The 2*d*tan(fov/2) chord is only correct for rays
+            // symmetric around the optical axis, which is not the case when the principal point is offset.
+            var scaleX = width / cameraCanvasRectTransform.sizeDelta.x;
+            var scaleY = height / cameraCanvasRectTransform.sizeDelta.y;
+            cameraCanvasRectTransform.localScale = new Vector3(scaleX, scaleY, 1f);
         }
 
         private void UpdateRaysRendering()
@@ -136,8 +156,22 @@ namespace PassthroughCameraSamples.CameraToWorld
             m_cameraMarker.transform.position = cameraPose.position;
             m_cameraMarker.transform.rotation = cameraPose.rotation;
 
-            // Position the canvas in front of the camera
-            m_cameraCanvas.transform.position = cameraPose.position + cameraPose.rotation * Vector3.forward * m_canvasDistance;
+            // Position the canvas in front of the camera. Use the centroid of the image rectangle on the
+            // plane perpendicular to the optical axis rather than cameraPose.position + forward * distance:
+            // the latter is where the optical axis hits the plane, which is offset from the image center
+            // by the principal-point shift.
+            var opticalAxis = cameraPose.forward;
+            var canvasPlane = new Plane(-opticalAxis, cameraPose.position + opticalAxis * m_canvasDistance);
+            var leftRay = m_cameraAccess.ViewportPointToRay(new Vector2(0f, 0.5f));
+            var rightRay = m_cameraAccess.ViewportPointToRay(new Vector2(1f, 0.5f));
+            var bottomRay = m_cameraAccess.ViewportPointToRay(new Vector2(0.5f, 0f));
+            var topRay = m_cameraAccess.ViewportPointToRay(new Vector2(0.5f, 1f));
+            canvasPlane.Raycast(leftRay, out var lDist);
+            canvasPlane.Raycast(rightRay, out var rDist);
+            canvasPlane.Raycast(bottomRay, out var bDist);
+            canvasPlane.Raycast(topRay, out var tDist);
+            m_cameraCanvas.transform.position =
+                (leftRay.GetPoint(lDist) + rightRay.GetPoint(rDist) + bottomRay.GetPoint(bDist) + topRay.GetPoint(tDist)) * 0.25f;
             m_cameraCanvas.transform.rotation = cameraPose.rotation;
 
             // Position the rays pointing to 4 corners of the canvas / image
