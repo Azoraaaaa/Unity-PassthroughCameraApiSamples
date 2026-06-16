@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Meta Platforms, Inc. and affiliates.
 
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -14,6 +15,28 @@ namespace PassthroughCameraSamples.MultiObjectDetection
     [MetaCodeSample("PassthroughCameraApiSamples-MultiObjectDetection")]
     public class SentisInferenceRunManager : MonoBehaviour
     {
+        private enum YoloVersion
+        {
+            Yolo9 = 9,
+            Yolo10 = 10,
+            Yolo11 = 11,
+            Yolo12 = 12,
+            Yolo26 = 26
+        }
+
+        private enum YoloOutputLayout
+        {
+            DefaultForVersion,
+            ChannelsFirst,
+            ChannelsLast
+        }
+
+        private enum SingleOutputKind
+        {
+            Raw,
+            EndToEnd
+        }
+
         [SerializeField] private PassthroughCameraAccess m_cameraAccess;
         [SerializeField] private DetectionUiMenuManager m_uiMenuManager;
         [SerializeField] private DetectionManager m_detectionManager;
@@ -22,6 +45,9 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         [SerializeField] private BackendType m_backend = BackendType.CPU;
         [SerializeField] private ModelAsset m_sentisModel;
         [SerializeField] private TextAsset m_labelsAsset;
+        [SerializeField, Tooltip("YOLOv10 and YOLO26 default to end-to-end output; YOLOv9, YOLO11, and YOLO12 default to raw YOLO output.")]
+        private YoloVersion m_yoloVersion = YoloVersion.Yolo26;
+        [SerializeField] private YoloOutputLayout m_singleOutputLayout = YoloOutputLayout.DefaultForVersion;
         [SerializeField, Range(0, 1)] private float m_iouThreshold = 0.6f;
         [SerializeField, Range(0, 1)] private float m_scoreThreshold = 0.23f;
 
@@ -37,11 +63,33 @@ namespace PassthroughCameraSamples.MultiObjectDetection
         private TensorShape m_inputTensorShape;
         private TextureTransform m_textureTransform;
         private int m_outputCount;
+        private int m_labelCount;
+        private SingleOutputKind m_singleOutputKind;
+        private bool m_singleOutputChannelsLast;
+        private bool m_hasConfiguredSingleOutputShape;
+        private int m_singleOutputDetectionCount;
+        private int m_singleOutputCandidateCount;
+        private int m_singleOutputChannelCount;
         private bool m_hasLoggedOutputShape;
         private bool m_hasLoggedDetectionCount;
         private bool m_hasLoggedAnchorWarning;
         private bool m_hasLoggedUnsupportedOutputShape;
         private readonly List<(int classId, Vector4 boundingBox)> m_detections = new List<(int classId, Vector4 boundingBox)>();
+        private readonly List<DetectionCandidate> m_rawDetectionCandidates = new List<DetectionCandidate>();
+
+        private struct DetectionCandidate
+        {
+            public int ClassId;
+            public float Score;
+            public Vector4 BoundingBox;
+
+            public DetectionCandidate(int classId, float score, Vector4 boundingBox)
+            {
+                ClassId = classId;
+                Score = score;
+                BoundingBox = boundingBox;
+            }
+        }
 
         private void Awake()
         {
@@ -60,11 +108,15 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 return;
             }
 
+            m_labelCount = CountLabels(m_labelsAsset);
+            m_singleOutputKind = GetSingleOutputKind(m_yoloVersion);
+            m_singleOutputChannelsLast = GetSingleOutputChannelsLast(m_yoloVersion, m_singleOutputLayout);
             m_textureTransform = new TextureTransform().SetTensorLayout(TensorLayout.NCHW);
             m_outputCount = model.outputs.Count;
             Debug.Log(
                 $"{nameof(SentisInferenceRunManager)} loaded '{m_sentisModel.name}' " +
-                $"with backend {m_backend}, input {m_inputTensorShape}, and {m_outputCount} output(s).");
+                $"with backend {m_backend}, input {m_inputTensorShape}, {GetYoloVersionLabel(m_yoloVersion)}, " +
+                $"and {m_outputCount} output(s).");
             m_engine = new Worker(model, m_backend);
         }
 
@@ -92,6 +144,9 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             CompletePendingOutputs(m_engine, m_outputCount);
             m_engine.Dispose();
         }
+
+        public bool SelectedYoloVersionUsesEndToEndOutput => GetSingleOutputKind(m_yoloVersion) == SingleOutputKind.EndToEnd;
+        public bool SelectedSingleOutputUsesChannelsLast => GetSingleOutputChannelsLast(m_yoloVersion, m_singleOutputLayout);
 
         internal static void PreloadModel(ModelAsset modelAsset)
         {
@@ -153,7 +208,7 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
             if (m_outputCount == 1)
             {
-                yield return ReadYoloEndToEndDetections();
+                yield return ReadSingleOutputDetections();
             }
             else if (m_outputCount == 3)
             {
@@ -182,14 +237,14 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             m_uiInference.DrawUIBoxes(m_detections, m_inputSize, cachedCameraPose);
         }
 
-        private IEnumerator ReadYoloEndToEndDetections()
+        private IEnumerator ReadSingleOutputDetections()
         {
             m_detections.Clear();
 
             var outputTensor = m_engine.PeekOutput(0) as Tensor<float>;
             if (outputTensor == null)
             {
-                Debug.LogError("YOLO end-to-end output 0 is not a float tensor.");
+                Debug.LogError("Single-output YOLO output 0 is not a float tensor.");
                 yield break;
             }
 
@@ -211,23 +266,40 @@ namespace PassthroughCameraSamples.MultiObjectDetection
                 m_hasLoggedOutputShape = true;
             }
 
-            if (!TryGetYoloEndToEndLayout(output.shape, out var detectionCount, out var channelsLast))
+            if (!m_hasConfiguredSingleOutputShape &&
+                !TryConfigureSingleOutputShape(output.shape, out var outputShapeError))
             {
                 if (!m_hasLoggedUnsupportedOutputShape)
                 {
-                    Debug.LogError(
-                        $"Unsupported single-output model shape: {output.shape}. " +
-                        "YOLO26 end-to-end export must produce [1, detectionCount, 6]. " +
-                        "Raw outputs such as [1, 84, 8400] need the editor converter instead.");
+                    Debug.LogError(outputShapeError);
                     m_hasLoggedUnsupportedOutputShape = true;
                 }
                 yield break;
             }
 
+            if (m_singleOutputKind == SingleOutputKind.EndToEnd)
+            {
+                ReadYoloEndToEndDetections(output, m_singleOutputDetectionCount, m_singleOutputChannelsLast);
+                LogDetectionCountOnce("YOLO end-to-end parser");
+            }
+            else
+            {
+                ReadYoloRawDetections(output, m_singleOutputCandidateCount, m_singleOutputChannelCount, m_singleOutputChannelsLast);
+                LogDetectionCountOnce($"YOLO raw-output parser ({m_singleOutputChannelCount} channels, {m_singleOutputCandidateCount} candidates)");
+            }
+        }
+
+        private void ReadYoloEndToEndDetections(Tensor<float> output, int detectionCount, bool channelsLast)
+        {
             for (var i = 0; i < detectionCount; i++)
             {
                 var score = channelsLast ? output[0, i, 4] : output[0, 4, i];
                 if (score < m_scoreThreshold)
+                {
+                    continue;
+                }
+
+                if (!IsFinite(score))
                 {
                     continue;
                 }
@@ -243,12 +315,63 @@ namespace PassthroughCameraSamples.MultiObjectDetection
 
                 m_detections.Add((classId, boundingBox));
             }
+        }
 
-            if (!m_hasLoggedDetectionCount)
+        private void ReadYoloRawDetections(Tensor<float> output, int candidateCount, int channelCount, bool channelsLast)
+        {
+            m_rawDetectionCandidates.Clear();
+
+            const int classScoreStart = 4;
+            for (var i = 0; i < candidateCount; i++)
             {
-                Debug.Log($"YOLO end-to-end parser kept {m_detections.Count} detection(s) at score threshold {m_scoreThreshold}.");
-                m_hasLoggedDetectionCount = true;
+                var bestClassId = -1;
+                var bestClassScore = float.NegativeInfinity;
+                for (var channel = classScoreStart; channel < channelCount; channel++)
+                {
+                    var classScore = ReadSingleOutputValue(output, i, channel, channelsLast);
+                    if (!IsFinite(classScore) || classScore <= bestClassScore)
+                    {
+                        continue;
+                    }
+
+                    bestClassScore = classScore;
+                    bestClassId = channel - classScoreStart;
+                }
+
+                if (bestClassId < 0)
+                {
+                    continue;
+                }
+
+                var score = bestClassScore;
+                if (!IsFinite(score) || score < m_scoreThreshold)
+                {
+                    continue;
+                }
+
+                var centerX = ReadSingleOutputValue(output, i, 0, channelsLast);
+                var centerY = ReadSingleOutputValue(output, i, 1, channelsLast);
+                var width = ReadSingleOutputValue(output, i, 2, channelsLast);
+                var height = ReadSingleOutputValue(output, i, 3, channelsLast);
+                if (!IsFinite(width) || !IsFinite(height) || width <= 0f || height <= 0f)
+                {
+                    continue;
+                }
+
+                var rawBoundingBox = new Vector4(
+                    centerX - width * 0.5f,
+                    centerY - height * 0.5f,
+                    centerX + width * 0.5f,
+                    centerY + height * 0.5f);
+                if (!TryNormalizeAndClampBox(rawBoundingBox, m_inputSize, out var boundingBox))
+                {
+                    continue;
+                }
+
+                m_rawDetectionCandidates.Add(new DetectionCandidate(bestClassId, score, boundingBox));
             }
+
+            NonMaxSuppression(m_detections, m_rawDetectionCandidates, m_iouThreshold);
         }
 
         private IEnumerator ReadPostProcessedDetections()
@@ -361,31 +484,116 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             return true;
         }
 
-        private static bool TryGetYoloEndToEndLayout(TensorShape shape, out int detectionCount, out bool channelsLast)
+        private static int CountLabels(TextAsset labelsAsset)
         {
-            detectionCount = 0;
-            channelsLast = true;
+            if (labelsAsset == null)
+            {
+                return 0;
+            }
 
+            return labelsAsset.text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Length;
+        }
+
+        private static SingleOutputKind GetSingleOutputKind(YoloVersion version)
+        {
+            // YOLOv10 and YOLO26 exports used here are NMS-free/end-to-end; the others use the raw YOLO head.
+            switch (version)
+            {
+                case YoloVersion.Yolo10:
+                case YoloVersion.Yolo26:
+                    return SingleOutputKind.EndToEnd;
+                default:
+                    return SingleOutputKind.Raw;
+            }
+        }
+
+        private static bool GetSingleOutputChannelsLast(YoloVersion version, YoloOutputLayout layout)
+        {
+            switch (layout)
+            {
+                case YoloOutputLayout.ChannelsFirst:
+                    return false;
+                case YoloOutputLayout.ChannelsLast:
+                    return true;
+                case YoloOutputLayout.DefaultForVersion:
+                    return GetSingleOutputKind(version) == SingleOutputKind.EndToEnd;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(layout), layout, null);
+            }
+        }
+
+        private static string GetYoloVersionLabel(YoloVersion version)
+        {
+            return version == YoloVersion.Yolo9 || version == YoloVersion.Yolo10
+                ? $"YOLOv{(int)version}"
+                : $"YOLO{(int)version}";
+        }
+
+        private bool TryConfigureSingleOutputShape(TensorShape shape, out string error)
+        {
+            error = null;
             if (shape.rank != 3 || shape[0] != 1)
             {
+                error = $"Unsupported single-output model shape for {GetYoloVersionLabel(m_yoloVersion)}: {shape}. Expected a static rank-3 tensor with batch size 1.";
                 return false;
             }
 
-            if (shape[2] == 6)
+            if (m_singleOutputKind == SingleOutputKind.EndToEnd)
             {
-                detectionCount = shape[1];
-                channelsLast = true;
-                return true;
+                m_singleOutputDetectionCount = m_singleOutputChannelsLast ? shape[1] : shape[2];
+                var channelCount = m_singleOutputChannelsLast ? shape[2] : shape[1];
+                if (channelCount != 6)
+                {
+                    error =
+                        $"Unsupported {GetYoloVersionLabel(m_yoloVersion)} end-to-end output shape: {shape}. " +
+                        $"The selected layout ({m_singleOutputLayout}) expects 6 channels, got {channelCount}.";
+                    return false;
+                }
+            }
+            else
+            {
+                m_singleOutputCandidateCount = m_singleOutputChannelsLast ? shape[1] : shape[2];
+                m_singleOutputChannelCount = m_singleOutputChannelsLast ? shape[2] : shape[1];
+                var expectedChannelCount = m_labelCount + 4;
+                if (m_labelCount > 0 && m_singleOutputChannelCount != expectedChannelCount)
+                {
+                    error =
+                        $"Unsupported {GetYoloVersionLabel(m_yoloVersion)} raw output shape: {shape}. " +
+                        $"The selected layout ({m_singleOutputLayout}) expects {expectedChannelCount} channels " +
+                        $"(4 box values + {m_labelCount} labels), got {m_singleOutputChannelCount}.";
+                    return false;
+                }
+
+                if (m_singleOutputChannelCount <= 4)
+                {
+                    error =
+                        $"Unsupported {GetYoloVersionLabel(m_yoloVersion)} raw output shape: {shape}. " +
+                        $"The selected layout ({m_singleOutputLayout}) produced only {m_singleOutputChannelCount} channel(s).";
+                    return false;
+                }
             }
 
-            if (shape[1] == 6)
+            m_hasConfiguredSingleOutputShape = true;
+            Debug.Log(
+                $"{nameof(SentisInferenceRunManager)} configured single-output parser: " +
+                $"{m_singleOutputKind}, layout {(m_singleOutputChannelsLast ? "channels-last" : "channels-first")}.");
+            return true;
+        }
+
+        private static float ReadSingleOutputValue(Tensor<float> output, int candidateIndex, int channelIndex, bool channelsLast)
+        {
+            return channelsLast ? output[0, candidateIndex, channelIndex] : output[0, channelIndex, candidateIndex];
+        }
+
+        private void LogDetectionCountOnce(string parserName)
+        {
+            if (m_hasLoggedDetectionCount)
             {
-                detectionCount = shape[2];
-                channelsLast = false;
-                return true;
+                return;
             }
 
-            return false;
+            Debug.Log($"{parserName} kept {m_detections.Count} detection(s) at score threshold {m_scoreThreshold}.");
+            m_hasLoggedDetectionCount = true;
         }
 
         private static bool TryNormalizeAndClampBox(Vector4 box, Vector2 inputSize, out Vector4 normalizedBox)
@@ -480,6 +688,43 @@ namespace PassthroughCameraSamples.MultiObjectDetection
             }
 
             Vector4 GetBox(int i) => new Vector4(boxes[i, 0], boxes[i, 1], boxes[i, 2], boxes[i, 3]);
+        }
+
+        private static void NonMaxSuppression(List<(int classId, Vector4 boundingBox)> outDetections, List<DetectionCandidate> candidates, float iouThreshold)
+        {
+            outDetections.Clear();
+            if (candidates.Count == 0)
+            {
+                return;
+            }
+
+            candidates.Sort((a, b) => b.Score.CompareTo(a.Score));
+
+            var suppressed = new bool[candidates.Count];
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                if (suppressed[i])
+                {
+                    continue;
+                }
+
+                var selected = candidates[i];
+                outDetections.Add((selected.ClassId, selected.BoundingBox));
+
+                for (var j = i + 1; j < candidates.Count; j++)
+                {
+                    if (suppressed[j])
+                    {
+                        continue;
+                    }
+
+                    var iou = CalculateIoU(selected.BoundingBox, candidates[j].BoundingBox);
+                    if (iou > iouThreshold)
+                    {
+                        suppressed[j] = true;
+                    }
+                }
+            }
         }
 
         internal static float CalculateIoU(Vector4 boxA, Vector4 boxB)

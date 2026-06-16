@@ -38,10 +38,8 @@ namespace PassthroughCameraSamples.MultiObjectDetection.Editor
             }
 
             var model = ModelLoader.Load(m_targetClass.OnnxModel);
-            var modelName = m_targetClass.OnnxModel.name.ToLowerInvariant();
             var outputPath = Path.ChangeExtension(AssetDatabase.GetAssetPath(m_targetClass.OnnxModel), ".sentis");
-            var isEndToEndModel = modelName.Contains("ete") || modelName.Contains("end2end");
-            if (isEndToEndModel)
+            if (m_targetClass.SelectedYoloVersionUsesEndToEndOutput)
             {
                 SaveQuantizedModel(model, outputPath);
                 return;
@@ -59,13 +57,25 @@ namespace PassthroughCameraSamples.MultiObjectDetection.Editor
                         0,      -0.5f,  0,      0.5f
             };
             var centersToCorners = Functional.Constant(new TensorShape(4, 4), centersToCornersData);
-            var modelOutput = Functional.Forward(model, input)[0];  //shape(1,N,85)
-            // Following for yolo model. in (1, 84, N) out put shape
-            var boxCoords = modelOutput[0, ..4, ..].Transpose(0, 1);
-            var allScores = modelOutput[0, 4.., ..].Transpose(0, 1);
-            var scores = Functional.ReduceMax(allScores, 1);                                    //shape=(N)
-            var classIDs = Functional.ArgMax(allScores, 1);                                     //shape=(N)
-            var corners = Functional.MatMul(boxCoords, centersToCorners);                    //shape=(N,4)
+            var modelOutput = Functional.Forward(model, input)[0];
+            if (m_targetClass.SelectedSingleOutputUsesChannelsLast)
+            {
+                var boxCoords = modelOutput[0, .., ..4];
+                var allScores = modelOutput[0, .., 4..];
+                var scores = Functional.ReduceMax(allScores, 1);
+                var classIDs = Functional.ArgMax(allScores, 1);
+                var corners = Functional.MatMul(boxCoords, centersToCorners);
+                var modelFinal = graph.Compile(corners, classIDs, scores);
+
+                SaveQuantizedModel(modelFinal, outputPath);
+                return;
+            }
+
+            var channelsFirstBoxCoords = modelOutput[0, ..4, ..].Transpose(0, 1);
+            var channelsFirstScores = modelOutput[0, 4.., ..].Transpose(0, 1);
+            var scores = Functional.ReduceMax(channelsFirstScores, 1);
+            var classIDs = Functional.ArgMax(channelsFirstScores, 1);
+            var corners = Functional.MatMul(channelsFirstBoxCoords, centersToCorners);
             var modelFinal = graph.Compile(corners, classIDs, scores);
 
             SaveQuantizedModel(modelFinal, outputPath);

@@ -1,0 +1,8 @@
+[mcp_servers.hzdb]
+command = "npx"
+args = [
+    "-y",
+    "@meta-quest/hzdb",
+    "mcp",
+    "server",
+]
