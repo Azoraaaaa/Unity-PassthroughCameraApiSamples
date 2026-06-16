@@ -62,12 +62,12 @@ namespace PassthroughCameraSamples.MultiObjectDetection.Editor
             {
                 var boxCoords = modelOutput[0, .., ..4];
                 var allScores = modelOutput[0, .., 4..];
-                var scores = Functional.ReduceMax(allScores, 1);
-                var classIDs = Functional.ArgMax(allScores, 1);
-                var corners = Functional.MatMul(boxCoords, centersToCorners);
-                var modelFinal = graph.Compile(corners, classIDs, scores);
+                var channelsLastScores = Functional.ReduceMax(allScores, 1);
+                var channelsLastClassIDs = Functional.ArgMax(allScores, 1);
+                var channelsLastCorners = Functional.MatMul(boxCoords, centersToCorners);
+                var channelsLastModelFinal = graph.Compile(channelsLastCorners, channelsLastClassIDs, channelsLastScores);
 
-                SaveQuantizedModel(modelFinal, outputPath);
+                SaveQuantizedModel(channelsLastModelFinal, outputPath);
                 return;
             }
 
