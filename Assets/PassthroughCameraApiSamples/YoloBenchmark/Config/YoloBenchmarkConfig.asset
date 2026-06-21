@@ -1,0 +1,75 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b807e9ad0ed34d7eae50ab68bed4d46b, type: 3}
+  m_Name: YoloBenchmarkConfig
+  m_EditorClassIdentifier: Assembly-CSharp::PassthroughCameraSamples.YoloBenchmark.YoloBenchmarkConfig
+  m_models:
+  - m_id: yolov9t
+    m_version: 9
+    m_variant: t
+    m_model: {fileID: 5022602860645237092, guid: e9e6e6068fde7454ea124434a710360e, type: 3}
+    m_outputKind: 0
+    m_tensorLayout: 0
+    m_quantization: 0
+    m_parametersMillions: 2
+    m_gflopsAt640: 7.7
+    m_notes: Official smallest YOLOv9 detection model.
+  - m_id: yolov10n
+    m_version: 10
+    m_variant: n
+    m_model: {fileID: 5022602860645237092, guid: 9ef21ca9205acea489dfc09314411323, type: 3}
+    m_outputKind: 1
+    m_tensorLayout: 1
+    m_quantization: 0
+    m_parametersMillions: 2.3
+    m_gflopsAt640: 6.7
+    m_notes: Official nano YOLOv10 detection model.
+  - m_id: yolo11n
+    m_version: 11
+    m_variant: n
+    m_model: {fileID: 5022602860645237092, guid: 5e2d624bdcb4c05498e245bfaa7c8496, type: 3}
+    m_outputKind: 0
+    m_tensorLayout: 0
+    m_quantization: 0
+    m_parametersMillions: 2.6
+    m_gflopsAt640: 6.5
+    m_notes: Official nano YOLO11 detection model.
+  - m_id: yolo12n
+    m_version: 12
+    m_variant: n
+    m_model: {fileID: 5022602860645237092, guid: 7580ad4675d368745ac7bda258da1720, type: 3}
+    m_outputKind: 0
+    m_tensorLayout: 0
+    m_quantization: 0
+    m_parametersMillions: 2.6
+    m_gflopsAt640: 6.5
+    m_notes: Official nano YOLO12 detection model.
+  - m_id: yolo26n
+    m_version: 26
+    m_variant: n
+    m_model: {fileID: 5022602860645237092, guid: 5683e59b7d77f1a4eb9035d811db7b7d, type: 3}
+    m_outputKind: 1
+    m_tensorLayout: 1
+    m_quantization: 0
+    m_parametersMillions: 2.4
+    m_gflopsAt640: 5.4
+    m_notes: Official nano YOLO26 detection model using the default one-to-one head.
+  m_backends: 0002000000010000
+  m_warmupIterations: 10
+  m_measuredIterations: 100
+  m_cooldownSeconds: 10
+  m_yieldOneFrameBetweenIterations: 1
+  m_collectGarbageBetweenRuns: 1
+  m_inputTextureOverride: {fileID: 0}
+  m_protocolVersion: quest3-yolo-nano-v1
+  m_outputFolderName: YoloBenchmark
+  m_targetRenderRate: 72

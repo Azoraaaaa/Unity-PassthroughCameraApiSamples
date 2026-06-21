@@ -1,0 +1,10 @@
+hammer
+screwdriver
+wrench
+pliers
+drill
+tape_measure
+scissors
+safety_gloves
+safety_helmet
+safety_goggles

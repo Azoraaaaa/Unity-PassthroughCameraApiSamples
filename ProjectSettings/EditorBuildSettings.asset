@@ -5,6 +5,9 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
+  - enabled: 0
+    path: Assets/PassthroughCameraApiSamples/YoloBenchmark/YoloBenchmark.unity
+    guid: 497feed24ac8f164ca505490ec7c142e
   - enabled: 1
     path: Assets/PassthroughCameraApiSamples/StartScene/StartScene.unity
     guid: 69e1b31c45bac42f88f75017ee404de1
@@ -25,6 +28,6 @@ EditorBuildSettings:
     guid: 708e8dca6055146b28afe2481f141457
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: f2bf97b3acdb64248a707c407c9fc54e, type: 2}
+    com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f, type: 2}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: a971eac5e950046e586c5e153e32d05c, type: 2}
     com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 9165b3c3dec8d446f9b11d1a99b6e245, type: 2}
-  m_UseUCBPForAssetBundles: 0
